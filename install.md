@@ -1,41 +1,46 @@
 ```bash
-# 1. Install dependencies
-apt install -y git gcc golang ffmpeg imagemagick
+# Di Ubuntu VPS
+apt install -y git gcc g++ make golang ffmpeg imagemagick
 
-# 2. Clone repo
-cd /vdb1/server
+# Clone dan patch
 git clone https://github.com/akshettrj/watgbridge.git
 cd watgbridge
 
-# 3. Update whatsmeow ke versi terbaru
-nano go.mod
-# ubah baris whatsmeow ke:
-# go.mau.fi/whatsmeow v0.0.0-20260219150138-7ae702b1eed4
-
-rm go.sum
+# Update whatsmeow
+go get go.mau.fi/whatsmeow@v0.0.0-20260219150138-7ae702b1eed4
 go mod tidy
 
-# 4. Build
+# Patch context.Background()
+python3 -c "
+with open('whatsapp/handlers.go', 'r') as f:
+    lines = f.readlines()
+for i, line in enumerate(lines):
+    if 'GetProfilePictureInfo(' in line and 'context.Background()' not in line:
+        lines[i] = line.replace('GetProfilePictureInfo(', 'GetProfilePictureInfo(context.Background(), ')
+with open('whatsapp/handlers.go', 'w') as f:
+    f.writelines(lines)
+"
+
+python3 -c "
+files = ['utils/telegram.go', 'utils/whatsapp.go', 'telegram/handlers.go']
+replacements = [
+    ('SendPresence(waTypes.', 'SendPresence(context.Background(), waTypes.'),
+    ('GetGroupInfo(', 'GetGroupInfo(context.Background(), '),
+    ('UpdateBlocklist(', 'UpdateBlocklist(context.Background(), '),
+    ('JoinGroupWithLink(', 'JoinGroupWithLink(context.Background(), '),
+    ('MarkRead(msgIds,', 'MarkRead(context.Background(), msgIds,'),
+]
+for fname in files:
+    with open(fname, 'r') as f:
+        content = f.read()
+    for old, new in replacements:
+        if old in content and new not in content:
+            content = content.replace(old, new)
+    with open(fname, 'w') as f:
+        f.write(content)
+print('done')
+"
+
 go build
-
-# 5. Setup config
-cp sample_config.yaml config.yaml
-nano config.yaml
-
-# 6. Jalankan pertama kali untuk scan QR
 ./watgbridge
-```
-
-Setelah QR ter-scan dan login sukses, baru setup systemd:
-
-```bash
-# Copy sample service
-cp watgbridge.service.sample /etc/systemd/system/watgbridge.service
-nano /etc/systemd/system/watgbridge.service
-# Edit User dan ExecStart sesuai path
-
-systemctl daemon-reload
-systemctl enable watgbridge
-systemctl start watgbridge
-systemctl status watgbridge
 ```
